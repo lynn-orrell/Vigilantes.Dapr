@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -44,13 +46,13 @@ namespace Vigilantes.Dapr.Extensions
                     etag = eTag,
                     options = new
                     {
-                        concurrency = concurrency == null ? null : concurrency == Concurrency.FIRST_WRITE ? "first-write" : "last-write",
-                        consistency = consistency == null ? null : consistency == Consistency.EVENTUAL ? "eventual" : "strong",
+                        concurrency = concurrency == null || !concurrency.HasValue ? null : concurrency == Concurrency.FIRST_WRITE ? "first-write" : "last-write",
+                        consistency = consistency == null || !consistency.HasValue ? null : consistency == Consistency.EVENTUAL ? "eventual" : "strong",
                         retryPolicy = new
                         {
-                            interval = retryInterval,
-                            threshold = retryThreshold,
-                            pattern = retryPattern == null ? null : retryPattern == RetryPattern.EXPONENTIAL ? "exponential" : "linear"
+                            interval = retryInterval == null || !retryInterval.HasValue ? (int?)null : retryInterval.Value,
+                            threshold = retryThreshold == null || !retryThreshold.HasValue ? (int?)null : retryThreshold.Value,
+                            pattern = retryPattern == null || !retryPattern.HasValue ? null : retryPattern == RetryPattern.EXPONENTIAL ? "exponential" : "linear"
                         }
                     }
                 }
@@ -89,6 +91,45 @@ namespace Vigilantes.Dapr.Extensions
             // This check is required because Dapr doesn't currently return etags correctly. Per the spec they should be quoted, but dapr isn't doing that.
             // Because of this, they don't show up in the standard headers but rather a custom header.
             return response.Headers.ETag?.Tag.Replace(@"""", string.Empty) ?? response.Headers.FirstOrDefault(h => h.Key.Equals("ETag", StringComparison.CurrentCultureIgnoreCase)).Value?.FirstOrDefault();
+        }
+
+        public static Task<HttpResponseMessage> DaprHttpDeleteStateAsync(string storeName, string key, HttpClient httpClient, string eTag = null,
+                                                                       Concurrency? concurrency = null, Consistency? consistency = null, int? retryInterval = null,
+                                                                       int? retryThreshold = null, RetryPattern? retryPattern = null)
+        {
+            var queryParams = new Dictionary<string, string>();
+
+            if(concurrency != null)
+            {
+                 queryParams.Add("concurrency", concurrency == Concurrency.FIRST_WRITE ? "first-write" : "last-write");
+            }
+            if(consistency != null)
+            {
+                queryParams.Add("consistency", consistency == Consistency.EVENTUAL ? "eventual" : "strong");
+            }
+            if(retryInterval != null && retryInterval.HasValue)
+            {
+                queryParams.Add("retryInterval", retryInterval.Value.ToString());
+            }
+            if(retryThreshold != null && retryThreshold.HasValue)
+            {
+                queryParams.Add("retryThreshold", retryThreshold.Value.ToString());
+            }
+            if(retryPattern != null)
+            {
+                queryParams.Add("retryPattern", retryPattern == RetryPattern.EXPONENTIAL ? "exponential" : "linear");
+            }
+
+            var queryString = new FormUrlEncodedContent(queryParams).ReadAsStringAsync().Result;
+            
+            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Delete, $"http://127.0.0.1:{DefaultHttpPort}{StatePath}{storeName}/{key}?{queryString}");
+
+            // if(!string.IsNullOrEmpty(eTag))
+            // {
+            //     request.Headers.IfMatch.Add(new EntityTagHeaderValue($@"""{eTag}"""));
+            // }
+
+            return httpClient.SendAsync(request);
         }
     }
 }
