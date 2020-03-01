@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -35,7 +36,7 @@ namespace Vigilantes.Dapr.Extensions
 
         public static Task<HttpResponseMessage> DaprHttpSaveStateAsync<T>(this T value, string storeName, string key, HttpClient httpClient, string eTag = null,
                                          Concurrency? concurrency = null, Consistency? consistency = null, int? retryInterval = null,
-                                         int? retryThreshold = null, RetryPattern? retryPattern = null) where T : class
+                                         int? retryThreshold = null, RetryPattern? retryPattern = null, CancellationToken cancellationToken = default) where T : class
         {
             var daprState = new[]
             {
@@ -60,14 +61,21 @@ namespace Vigilantes.Dapr.Extensions
 
             var json = JsonConvert.SerializeObject(daprState, Formatting.None, JsonSerializerSettings);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
-            return httpClient.PostAsync($"http://127.0.0.1:{DefaultHttpPort}{StatePath}{storeName}", content);
+            return httpClient.PostAsync($"http://127.0.0.1:{DefaultHttpPort}{StatePath}{storeName}", content, cancellationToken);
         }
 
-        public static async Task<string> DaprHttpLoadStateAsync<T>(this T value, string storeName, string key, HttpClient httpClient, Consistency? consistency = null) where T : class
+        public static async Task<string> DaprHttpLoadStateAsync<T>(this T value, string storeName, string key, HttpClient httpClient,
+                                                                   Consistency? consistency = null, CancellationToken cancellationToken = default) where T : class
         {
             var consistencyParam = consistency == null ? string.Empty : consistency == Consistency.EVENTUAL ? "eventual" : "strong";
-            var response = await httpClient.GetAsync($"http://127.0.0.1:{DefaultHttpPort}{StatePath}{storeName}/{key}?{consistencyParam}");
+            var response = await httpClient.GetAsync($"http://127.0.0.1:{DefaultHttpPort}{StatePath}{storeName}/{key}?{consistencyParam}", cancellationToken);
             var json = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"Exception loading state. StatusCode: {response.StatusCode}. Message: {json}");
+            }
+
             if (string.IsNullOrEmpty(json))
             {
                 return null;
@@ -95,33 +103,33 @@ namespace Vigilantes.Dapr.Extensions
 
         public static Task<HttpResponseMessage> DaprHttpDeleteStateAsync(string storeName, string key, HttpClient httpClient, string eTag = null,
                                                                        Concurrency? concurrency = null, Consistency? consistency = null, int? retryInterval = null,
-                                                                       int? retryThreshold = null, RetryPattern? retryPattern = null)
+                                                                       int? retryThreshold = null, RetryPattern? retryPattern = null, CancellationToken cancellationToken = default)
         {
             var queryParams = new Dictionary<string, string>();
 
-            if(concurrency != null)
+            if (concurrency != null)
             {
-                 queryParams.Add("concurrency", concurrency == Concurrency.FIRST_WRITE ? "first-write" : "last-write");
+                queryParams.Add("concurrency", concurrency == Concurrency.FIRST_WRITE ? "first-write" : "last-write");
             }
-            if(consistency != null)
+            if (consistency != null)
             {
                 queryParams.Add("consistency", consistency == Consistency.EVENTUAL ? "eventual" : "strong");
             }
-            if(retryInterval != null && retryInterval.HasValue)
+            if (retryInterval != null && retryInterval.HasValue)
             {
                 queryParams.Add("retryInterval", retryInterval.Value.ToString());
             }
-            if(retryThreshold != null && retryThreshold.HasValue)
+            if (retryThreshold != null && retryThreshold.HasValue)
             {
                 queryParams.Add("retryThreshold", retryThreshold.Value.ToString());
             }
-            if(retryPattern != null)
+            if (retryPattern != null)
             {
                 queryParams.Add("retryPattern", retryPattern == RetryPattern.EXPONENTIAL ? "exponential" : "linear");
             }
 
             var queryString = new FormUrlEncodedContent(queryParams).ReadAsStringAsync().Result;
-            
+
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Delete, $"http://127.0.0.1:{DefaultHttpPort}{StatePath}{storeName}/{key}?{queryString}");
 
             // if(!string.IsNullOrEmpty(eTag))
@@ -129,7 +137,7 @@ namespace Vigilantes.Dapr.Extensions
             //     request.Headers.IfMatch.Add(new EntityTagHeaderValue($@"""{eTag}"""));
             // }
 
-            return httpClient.SendAsync(request);
+            return httpClient.SendAsync(request, cancellationToken);
         }
     }
 }
