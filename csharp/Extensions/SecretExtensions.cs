@@ -12,6 +12,7 @@ namespace Vigilantes.Dapr.Extensions
     public static class SecretExtensions
     {
         private static readonly JsonSerializerSettings JsonSerializerSettings = new JsonSerializerSettings() { NullValueHandling = NullValueHandling.Ignore };
+        private static readonly Dictionary<string, string> SecretCache = new Dictionary<string, string>();
         public const string SecretsPath = "/v1.0/secrets/";
         public static readonly string DefaultHttpPort = Environment.GetEnvironmentVariable("DAPR_HTTP_PORT") ?? "3500";
 
@@ -24,17 +25,25 @@ namespace Vigilantes.Dapr.Extensions
                 queryString = new FormUrlEncodedContent(metadata).ReadAsStringAsync().Result;
             }
 
-            var response = await httpClient.GetAsync($"http://127.0.0.1:{DefaultHttpPort}{SecretsPath}{secretStoreName}/{secretName}?{queryString}");
-            var json = await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
+            var requestUrl = $"http://127.0.0.1:{DefaultHttpPort}{SecretsPath}{secretStoreName}/{secretName}?{queryString}";
+            var secret = SecretCache.GetValueOrDefault(requestUrl, null);
+            if (secret == null)
             {
-                throw new Exception($"Unable to read secret. Response: {json}");
+                var response = await httpClient.GetAsync(requestUrl);
+                var json = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new Exception($"Unable to read secret. Response: {json}");
+                }
+
+                var jToken = JToken.Parse(json);
+
+                secret = jToken.Value<string>(keyName ?? secretName);
+                SecretCache[requestUrl] = secret;
             }
 
-            var jToken = JToken.Parse(json);
-
-            return jToken.Value<string>(keyName ?? secretName);
+            return secret;
         }
     }
 }
