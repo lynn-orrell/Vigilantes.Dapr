@@ -15,12 +15,13 @@ namespace Vigilantes.Dapr.Extensions
         public static readonly string DefaultHttpPort = Environment.GetEnvironmentVariable("DAPR_HTTP_PORT") ?? "3500";
 
         public static Task<HttpResponseMessage> DaprHttpWriteToBindingAsync<T>(this T value, string bindingName, HttpClient httpClient, Dictionary<string, string> metadata = null,
-                                                                               CancellationToken cancellationToken = default) where T : class
+                                                                               string operation = "create", CancellationToken cancellationToken = default) where T : class
         {
             var daprData = new
             {
                 data = value,
-                metadata = metadata
+                metadata = metadata,
+                operation = operation
             };
 
             var json = JsonConvert.SerializeObject(daprData, Formatting.None, JsonSerializerSettings);
