@@ -18,13 +18,14 @@ namespace Vigilantes.Dapr.Extensions
         public static readonly string DefaultHttpPort = Environment.GetEnvironmentVariable("DAPR_HTTP_PORT") ?? "3500";
 
         public static Task<HttpResponseMessage> DaprHttpPublishAsync<T>(this T value, 
+                                                                        string pubsubName,
                                                                         string topicName, 
                                                                         HttpClient httpClient, 
                                                                         CancellationToken cancellationToken = default) where T : class
         {
             var json = JsonConvert.SerializeObject(value, Formatting.None, JsonSerializerSettings);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
-            return httpClient.PostAsync($"http://127.0.0.1:{DefaultHttpPort}{PublishPath}{topicName}", content, cancellationToken);
+            return httpClient.PostAsync($"http://127.0.0.1:{DefaultHttpPort}{PublishPath}{pubsubName}/{topicName}", content, cancellationToken);
         }
 
     }
